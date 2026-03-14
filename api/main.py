@@ -42,6 +42,11 @@ async def internal_error_handler(request: Request, exc: Exception):
     )
 
 
+from routers import upload
+
+app.include_router(upload.router, tags=["upload"])
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}
