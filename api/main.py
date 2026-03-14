@@ -42,10 +42,11 @@ async def internal_error_handler(request: Request, exc: Exception):
     )
 
 
-from routers import upload, profile
+from routers import upload, profile, validate
 
 app.include_router(upload.router, tags=["upload"])
 app.include_router(profile.router, tags=["profile"])
+app.include_router(validate.router, tags=["validate"])
 
 
 @app.get("/health")

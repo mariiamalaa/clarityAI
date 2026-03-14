@@ -10,7 +10,7 @@ import sys
 projectRoot = Path(__file__).parent.parent.parent
 if str(projectRoot) not in sys.path:
     sys.path.insert(0, str(projectRoot))
-from src.io_loading import loadTable
+from src.ioLoading import loadTable
 from src.profiling import suggestColumns, analyzeDataCharacteristics
 
 router = APIRouter()

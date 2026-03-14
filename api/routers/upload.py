@@ -5,13 +5,13 @@ from uuid import uuid4
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from typing import List
 
-# Import from src.io_loading
+# Import from src.ioLoading
 # Add project root to path
 import sys
 projectRoot = Path(__file__).parent.parent.parent
 if str(projectRoot) not in sys.path:
     sys.path.insert(0, str(projectRoot))
-from src.io_loading import loadTable
+from src.ioLoading import loadTable
 
 router = APIRouter()
 
