@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from src.models.ets import ets_forecast, EtsError
+from src.models.theta import theta_forecast, ThetaUnavailable, ThetaError
 
 
 def backtest_ets(
@@ -27,11 +28,37 @@ def backtest_ets(
     }
 
 
+def backtestTheta(
+    series: pd.Series,
+    *,
+    horizon: int,
+    alpha: float = 0.05,
+) -> Dict[str, Any]:
+    if len(series) < 3:
+        raise ThetaError("Theta requires at least 3 rows to backtest")
+
+    forecast = theta_forecast(series, horizon=horizon, alpha=alpha)
+    return {
+        "model": "Theta",
+        "forecast": forecast,
+    }
+
+
+def backtest_theta(series: pd.Series, *, horizon: int, alpha: float = 0.05) -> Dict[str, Any]:
+    return backtestTheta(series, horizon=horizon, alpha=alpha)
+
+
 def run_backtests(series: pd.Series, *, horizon: int, models: List[str]) -> Dict[str, Any]:
     results: Dict[str, Any] = {}
     for name in models:
         if name.upper() == "ETS":
             results["ETS"] = backtest_ets(series, horizon=horizon)
+        elif name.upper() == "THETA":
+            try:
+                results["THETA"] = backtestTheta(series, horizon=horizon)
+            except ThetaUnavailable:
+                # Gracefully skip if statsmodels is missing/too old for ThetaModel.
+                continue
         else:
             raise ValueError(f"Unknown model '{name}'")
     return results
