@@ -3,6 +3,8 @@ import WizardStep1Upload from './components/WizardStep1Upload'
 import WizardStep2Columns from './components/WizardStep2Columns'
 import WizardStep3Config from './components/WizardStep3Config'
 import ForecastChart from './components/ForecastChart'
+import KpiCards from './components/KpiCards'
+import ModelAccuracyTable from './components/ModelAccuracyTable'
 import './App.css'
 
 const STEPS = ['Upload', 'Columns', 'Configure', 'Results']
@@ -95,7 +97,11 @@ export default function App() {
               {!wizardState.forecastResult ? (
                 <p style={{ opacity: 0.75 }}>No forecast result available.</p>
               ) : (
-                <ForecastChart forecastResult={wizardState.forecastResult} />
+                <>
+                  <KpiCards forecastResult={wizardState.forecastResult} />
+                  <ForecastChart forecastResult={wizardState.forecastResult} />
+                  <ModelAccuracyTable forecastResult={wizardState.forecastResult} />
+                </>
               )}
             </div>
           )}
