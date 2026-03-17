@@ -515,3 +515,100 @@ button {
   padding: 48px;
   color: var(--color-text-muted);
 }
+
+/* Step 3 — forecast configuration */
+.configStep { text-align: left; }
+
+.configForm {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin-bottom: 20px;
+}
+
+.configSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.configHeaderRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.configLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.configHint {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.horizonSlider {
+  width: 100%;
+  accent-color: var(--color-primary);
+}
+
+.sliderTicks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--color-text-hint);
+}
+
+.modelGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.modelOption {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+
+.modelOption:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.modelOption.selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.modelOption input { margin-top: 2px; }
+
+.modelOptionText {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.modelOptionLabel { font-weight: 500; color: var(--color-text); }
+
+.modelOptionInfo {
+  color: var(--color-text-hint);
+  font-size: 13px;
+  user-select: none;
+}
+
+@media (max-width: 560px) {
+  .modelGrid { grid-template-columns: 1fr; }
+}
