@@ -17,22 +17,39 @@ app.add_middleware(
 )
 
 
-@app.exception_handler(404)
-async def not_found_handler(request: Request, exc):
+
+# Global HTTPException handler
+from fastapi import HTTPException
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 404:
+        return JSONResponse(status_code=404, content={"error": "Not found"})
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail if exc.detail else exc.status_code})
+
+
+# 500 handler
+@app.exception_handler(Exception)
+async def internal_error_handler(request: Request, exc: Exception):
     return JSONResponse(
-        status_code=404,
-        content={"error": "Not found", "path": str(request.url)},
+        status_code=500,
+        content={"error": "Internal server error"},
     )
 
-
-@app.exception_handler(500)
-async def internal_error_handler(request: Request, exc: Exception):
+    # ...existing code...
     return JSONResponse(
         status_code=500,
         content={"error": "Internal server error", "detail": str(exc)},
     )
 
 
-@app.get("/health", tags=["system"])
+from api.routers import upload, profile, validate, forecast
+
+app.include_router(upload.router, tags=["upload"])
+app.include_router(profile.router, tags=["profile"])
+app.include_router(validate.router, tags=["validate"])
+app.include_router(forecast.router, tags=["forecast"])
+
+
+@app.get("/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}

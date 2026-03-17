@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import WizardStep1Upload from './components/WizardStep1Upload'
+import WizardStep2Columns from './components/WizardStep2Columns'
+import WizardStep3Config from './components/WizardStep3Config'
 import './App.css'
 
 const STEPS = ['Upload', 'Columns', 'Configure', 'Results']
@@ -70,15 +72,19 @@ export default function App() {
             />
           )}
           {step === 1 && (
-            <div className="placeholderStep">
-              <p>Step 2 — Column confirmation (Issue #7)</p>
-              <p className="placeholderSub">file_id: {wizardState.fileId}</p>
-            </div>
+            <WizardStep2Columns
+              fileId={wizardState.fileId}
+              columns={wizardState.columns}
+              onNext={nextStep}
+              onUpdate={updateWizard}
+            />
           )}
           {step === 2 && (
-            <div className="placeholderStep">
-              <p>Step 3 — Forecast configuration (Issue #8)</p>
-            </div>
+            <WizardStep3Config
+              wizardState={wizardState}
+              onUpdate={updateWizard}
+              onNext={nextStep}
+            />
           )}
           {step === 3 && (
             <div className="placeholderStep">
