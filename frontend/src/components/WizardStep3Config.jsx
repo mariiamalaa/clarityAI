@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import client from '../api/client'
 
 const MODEL_OPTIONS = [
@@ -28,21 +28,57 @@ export default function WizardStep3Config({ wizardState, onUpdate, onNext }) {
   const [horizon, setHorizon] = useState(wizardState.horizon ?? 6)
   const [models, setModels] = useState(wizardState.models ?? 'ensemble')
   const [submitting, setSubmitting] = useState(false)
-  const [statusIdx, setStatusIdx] = useState(0)
+  const [statusMessage, setStatusMessage] = useState('Preparing...')
   const [error, setError] = useState(null)
+  const jobIdRef = useRef(null)
 
-  const loadingMessages = useMemo(
-    () => ['Running Prophet...', 'Running LightGBM...', 'Combining forecasts...'],
-    []
-  )
+  const fallbackMessages = useMemo(() => ['Running Prophet...', 'Running LightGBM...'], [])
+
+  useEffect(() => {
+    if (!submitting || !jobIdRef.current) return
+    let cancelled = false
+
+    const poll = async () => {
+      try {
+        const res = await client.get(`/status/${jobIdRef.current}`)
+        const data = res.data
+
+        if (!cancelled) {
+          setStatusMessage(data.progress || data.status || 'Working...')
+        }
+
+        if (data.status === 'done') {
+          onUpdate?.({ forecastJobId: jobIdRef.current, forecastResult: data.result || null })
+          onNext?.()
+          return
+        }
+
+        if (data.status === 'error') {
+          throw new Error(data.error || 'Forecast failed')
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e.message || 'Failed to fetch job status')
+          setSubmitting(false)
+        }
+        return
+      }
+      setTimeout(poll, 2000)
+    }
+
+    poll()
+    return () => {
+      cancelled = true
+    }
+  }, [submitting, onNext, onUpdate])
 
   useEffect(() => {
     if (!submitting) return
     const t = setInterval(() => {
-      setStatusIdx((i) => (i + 1) % loadingMessages.length)
-    }, 1200)
+      setStatusMessage((prev) => prev || fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)])
+    }, 1500)
     return () => clearInterval(t)
-  }, [submitting, loadingMessages.length])
+  }, [submitting, fallbackMessages])
 
   const handleSubmit = async () => {
     setError(null)
@@ -63,15 +99,17 @@ export default function WizardStep3Config({ wizardState, onUpdate, onNext }) {
     console.log('Forecast payload', payload)
 
     setSubmitting(true)
+    setStatusMessage('Submitting forecast job...')
     try {
       onUpdate?.({ horizon: Number(horizon), models })
-      await client.post('/forecast', payload)
-      onNext?.()
+      const res = await client.post('/forecast', payload)
+      const jobId = res.data?.job_id
+      if (!jobId) throw new Error('No job_id returned from /forecast')
+      jobIdRef.current = jobId
+      setStatusMessage('Queued...')
     } catch (err) {
       setError(err.message || 'Failed to start forecast')
-    } finally {
       setSubmitting(false)
-      setStatusIdx(0)
     }
   }
 
@@ -80,7 +118,7 @@ export default function WizardStep3Config({ wizardState, onUpdate, onNext }) {
       <div className="configStep">
         <div className="loadingState">
           <div className="uploadSpinner"></div>
-          <p>{loadingMessages[statusIdx]}</p>
+          <p>{statusMessage}</p>
         </div>
       </div>
     )
