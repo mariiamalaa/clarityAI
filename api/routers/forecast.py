@@ -128,7 +128,7 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
 
         def runForSeries(series: pd.Series) -> Dict[str, Any]:
             forecasts: Dict[str, Any] = {}
-            smapeByModel: Dict[str, Any] = {}
+            metricsByModel: Dict[str, Any] = {}
             failedModels: Dict[str, str] = {}
 
             if len(series) <= payload.horizon + 3:
@@ -145,7 +145,10 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                         raise RuntimeError("Model unavailable")
                     btForecast = bt[modelName.upper()]["forecast"]
                     modelSmape = _smape(test.astype(float).tolist(), btForecast["yhat"])
-                    smapeByModel[modelName.upper()] = {"smape": modelSmape}
+                    yTrue = test.astype(float).to_numpy(dtype=float)
+                    yPred = np.asarray(btForecast["yhat"], dtype=float)
+                    modelMae = float(np.mean(np.abs(yTrue - yPred)))
+                    metricsByModel[modelName.upper()] = {"smape": modelSmape, "mae": modelMae}
 
                     fut = run_backtests(series, horizon=payload.horizon, models=[modelName])
                     if modelName.upper() not in fut:
@@ -161,7 +164,8 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
 
             return {
                 "forecasts": forecasts,
-                "smape": smapeByModel,
+                "smape": metricsByModel,
+                "metrics": metricsByModel,
                 "ensemble": ensemble,
                 "failedModels": failedModels,
             }
