@@ -2,6 +2,9 @@ import { useState } from 'react'
 import WizardStep1Upload from './components/WizardStep1Upload'
 import WizardStep2Columns from './components/WizardStep2Columns'
 import WizardStep3Config from './components/WizardStep3Config'
+import ForecastChart from './components/ForecastChart'
+import KpiCards from './components/KpiCards'
+import ModelAccuracyTable from './components/ModelAccuracyTable'
 import './App.css'
 
 const STEPS = ['Upload', 'Columns', 'Configure', 'Results']
@@ -34,6 +37,8 @@ export default function App() {
     groupCol: null,
     horizon: 6,
     models: 'ensemble',
+    forecastJobId: null,
+    forecastResult: null,
   })
 
   function updateWizard(updates) {
@@ -88,7 +93,16 @@ export default function App() {
           )}
           {step === 3 && (
             <div className="placeholderStep">
-              <p>Results dashboard (Week 2)</p>
+              <p style={{ marginTop: 0, fontWeight: 600 }}>Forecast results</p>
+              {!wizardState.forecastResult ? (
+                <p style={{ opacity: 0.75 }}>No forecast result available.</p>
+              ) : (
+                <>
+                  <KpiCards forecastResult={wizardState.forecastResult} />
+                  <ForecastChart forecastResult={wizardState.forecastResult} />
+                  <ModelAccuracyTable forecastResult={wizardState.forecastResult} />
+                </>
+              )}
             </div>
           )}
         </div>

@@ -128,7 +128,7 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
 
         def runForSeries(series: pd.Series) -> Dict[str, Any]:
             forecasts: Dict[str, Any] = {}
-            smapeByModel: Dict[str, Any] = {}
+            metricsByModel: Dict[str, Any] = {}
             failedModels: Dict[str, str] = {}
 
             if len(series) <= payload.horizon + 3:
@@ -145,7 +145,10 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                         raise RuntimeError("Model unavailable")
                     btForecast = bt[modelName.upper()]["forecast"]
                     modelSmape = _smape(test.astype(float).tolist(), btForecast["yhat"])
-                    smapeByModel[modelName.upper()] = {"smape": modelSmape}
+                    yTrue = test.astype(float).to_numpy(dtype=float)
+                    yPred = np.asarray(btForecast["yhat"], dtype=float)
+                    modelMae = float(np.mean(np.abs(yTrue - yPred)))
+                    metricsByModel[modelName.upper()] = {"smape": modelSmape, "mae": modelMae}
 
                     fut = run_backtests(series, horizon=payload.horizon, models=[modelName])
                     if modelName.upper() not in fut:
@@ -161,7 +164,8 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
 
             return {
                 "forecasts": forecasts,
-                "smape": smapeByModel,
+                "smape": metricsByModel,
+                "metrics": metricsByModel,
                 "ensemble": ensemble,
                 "failedModels": failedModels,
             }
@@ -174,7 +178,12 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                     gdf[payload.metricCol].to_numpy(dtype=float),
                     index=pd.DatetimeIndex(gdf[payload.dateCol]),
                 ).sort_index()
-                groupedResults[str(groupValue)] = runForSeries(series)
+                core = runForSeries(series)
+                history = {
+                    "dates": [d.isoformat() for d in series.index.to_pydatetime()],
+                    "y": series.astype(float).tolist(),
+                }
+                groupedResults[str(groupValue)] = {**core, "history": history}
             result: Dict[str, Any] = {
                 "message": monthlyMsg,
                 "grouped": True,
@@ -188,11 +197,16 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                 index=pd.DatetimeIndex(monthlyDf[payload.dateCol]),
             ).sort_index()
             core = runForSeries(series)
+            history = {
+                "dates": [d.isoformat() for d in series.index.to_pydatetime()],
+                "y": series.astype(float).tolist(),
+            }
             result = {
                 "message": monthlyMsg,
                 "grouped": False,
                 "horizon": payload.horizon,
                 "modelsRequested": requestedModels,
+                "history": history,
                 **core,
             }
 

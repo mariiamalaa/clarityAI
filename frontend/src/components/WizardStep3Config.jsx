@@ -85,11 +85,9 @@ export default function WizardStep3Config({ wizardState, onUpdate, onNext }) {
 
     const payload = {
       file_id: wizardState.fileId,
-      cols: {
-        date_col: wizardState.dateCol,
-        metric_col: wizardState.metricCol,
-        group_col: wizardState.groupCol || null,
-      },
+      date_col: wizardState.dateCol,
+      metric_col: wizardState.metricCol,
+      group_col: wizardState.groupCol || null,
       horizon: Number(horizon),
       models,
     }
@@ -103,8 +101,8 @@ export default function WizardStep3Config({ wizardState, onUpdate, onNext }) {
     try {
       onUpdate?.({ horizon: Number(horizon), models })
       const res = await client.post('/forecast', payload)
-      const jobId = res.data?.job_id
-      if (!jobId) throw new Error('No job_id returned from /forecast')
+      const jobId = res.data?.jobId
+      if (!jobId) throw new Error('No jobId returned from /forecast')
       jobIdRef.current = jobId
       setStatusMessage('Queued...')
     } catch (err) {
