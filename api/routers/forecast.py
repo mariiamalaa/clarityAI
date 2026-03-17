@@ -174,7 +174,12 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                     gdf[payload.metricCol].to_numpy(dtype=float),
                     index=pd.DatetimeIndex(gdf[payload.dateCol]),
                 ).sort_index()
-                groupedResults[str(groupValue)] = runForSeries(series)
+                core = runForSeries(series)
+                history = {
+                    "dates": [d.isoformat() for d in series.index.to_pydatetime()],
+                    "y": series.astype(float).tolist(),
+                }
+                groupedResults[str(groupValue)] = {**core, "history": history}
             result: Dict[str, Any] = {
                 "message": monthlyMsg,
                 "grouped": True,
@@ -188,11 +193,16 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                 index=pd.DatetimeIndex(monthlyDf[payload.dateCol]),
             ).sort_index()
             core = runForSeries(series)
+            history = {
+                "dates": [d.isoformat() for d in series.index.to_pydatetime()],
+                "y": series.astype(float).tolist(),
+            }
             result = {
                 "message": monthlyMsg,
                 "grouped": False,
                 "horizon": payload.horizon,
                 "modelsRequested": requestedModels,
+                "history": history,
                 **core,
             }
 
