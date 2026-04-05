@@ -1,7 +1,11 @@
 import math
+import os
 import time
 import unittest
 from pathlib import Path
+
+# macOS: xgboost and torch may both link OpenMP; training N-BEATS after XGB can abort without this.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 
 def _tryImport(moduleName: str):
@@ -61,8 +65,42 @@ class TestModelWrappers(unittest.TestCase):
         out = xgbForecast(self.series, horizon=6, nLags=12, searchIter=6, randomState=0)
         self._assertForecastDict(out, horizon=6, modelName="XGB")
 
+    def testNbeatsForecastFormatOrSkip(self):
+        neuralforecast = _tryImport("neuralforecast")
+        if neuralforecast is None:
+            self.skipTest("neuralforecast not installed; skipping N-BEATS tests")
 
-class TestForecastApiFlow(unittest.TestCase):
+        from src.models.nbeats import nbeatsForecast, NbeatsUnavailable
+
+        pd = self.pd
+        np = self.np
+        longSeries = pd.Series(
+            (np.sin(np.arange(40) / 6.0) * 10.0 + np.linspace(100.0, 130.0, 40)),
+            index=pd.date_range("2020-01-01", periods=40, freq="MS"),
+        )
+        try:
+            out = nbeatsForecast(longSeries, horizon=6, maxSteps=8, randomState=0)
+        except NbeatsUnavailable:
+            self.skipTest("neuralforecast dependencies unavailable")
+            return
+        self._assertForecastDict(out, horizon=6, modelName="N-BEATS")
+
+    def testNbeatsRejectsShortSeries(self):
+        from src.models.nbeats import nbeatsForecast
+
+        pd = self.pd
+        np = self.np
+        shortSeries = pd.Series(
+            np.linspace(100.0, 110.0, 24),
+            index=pd.date_range("2020-01-01", periods=24, freq="MS"),
+        )
+        with self.assertRaises(ValueError) as ctx:
+            nbeatsForecast(shortSeries, horizon=3)
+        self.assertIn("36", str(ctx.exception))
+
+
+class TestZForecastApiFlow(unittest.TestCase):
+    """Class name uses Z_ so this suite runs after TestModelWrappers (N-BEATS/torch before XGB in same process)."""
     def setUp(self) -> None:
         from fastapi.testclient import TestClient
         from api.main import app
@@ -95,7 +133,14 @@ class TestForecastApiFlow(unittest.TestCase):
             time.sleep(0.05)
         self.fail(f"Job {jobId} did not finish in time; last={last}")
 
-    def _runFlow(self, csvText: str, *, horizon: int, expectDone: bool = True) -> dict:
+    def _runFlow(
+        self,
+        csvText: str,
+        *,
+        horizon: int,
+        expectDone: bool = True,
+        models=None,
+    ) -> dict:
         fileId = self._postUploadCsv(csvText.encode("utf-8"), filename="dataset.csv")
 
         profileRes = self.client.get(f"/profile/{fileId}", headers={"Origin": "http://localhost:5173"})
@@ -109,13 +154,15 @@ class TestForecastApiFlow(unittest.TestCase):
         self.assertEqual(validateRes.status_code, 200, validateRes.text)
         self.assertIn("valid", validateRes.json())
 
+        if models is None:
+            models = ["ETS", "THETA", "XGB"]
         forecastPayload = {
             "file_id": fileId,
             "date_col": "date",
             "metric_col": "metric",
             "group_col": None,
             "horizon": horizon,
-            "models": "ensemble",
+            "models": models,
         }
         start = time.time()
         forecastRes = self.client.post("/forecast", json=forecastPayload, headers={"Origin": "http://localhost:5173"})
@@ -177,7 +224,7 @@ class TestForecastApiFlow(unittest.TestCase):
         self._runFlow("\n".join(rows), horizon=6, expectDone=True)
 
     def testShortSeriesUnder24MonthsDoesNotCrash(self):
-        # 18 months
+        # 18 months — N-BEATS must skip (< 36) while ETS/Theta/XGB still run.
         rows = ["date,metric"]
         year = 2023
         month = 1
@@ -189,8 +236,16 @@ class TestForecastApiFlow(unittest.TestCase):
             if month == 13:
                 month = 1
                 year += 1
-        body = self._runFlow("\n".join(rows), horizon=6, expectDone=True)
-        self.assertIn(body["status"], ("done", "error"))
+        body = self._runFlow(
+            "\n".join(rows),
+            horizon=6,
+            expectDone=True,
+            models=["ETS", "THETA", "XGB", "N-BEATS"],
+        )
+        self.assertEqual(body["status"], "done", body)
+        result = body["result"]
+        self.assertIn("N-BEATS", result.get("failedModels", {}))
+        self.assertNotIn("N-BEATS", result.get("forecasts", {}))
 
     def testMissingMonthsStillRuns(self):
         # 36-month span with some missing months (dropped)
