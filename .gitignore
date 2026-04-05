@@ -35,6 +35,9 @@ frontend/.env
 .DS_Store
 Thumbs.db
 
+# PyTorch Lightning (neuralforecast local runs)
+lightning_logs/
+
 # Pytest
 .pytest_cache/
 htmlcov/
