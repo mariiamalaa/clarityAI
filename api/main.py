@@ -1,3 +1,8 @@
+import os
+
+# macOS: PyTorch (N-BEATS) and other native libs may both load OpenMP; prevents duplicate-lib abort.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
