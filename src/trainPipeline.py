@@ -5,8 +5,14 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from src.models.ets import ets_forecast, EtsError
+from src.models.nbeats import nbeatsForecast, NbeatsUnavailable
 from src.models.theta import theta_forecast, ThetaUnavailable, ThetaError
 from src.models.xgb import xgb_forecast, XgbUnavailable, XgbError
+
+
+def _isNbeatsModelName(name: str) -> bool:
+    n = name.upper().strip().replace("_", "-")
+    return n in ("N-BEATS", "NBEATS")
 
 
 def backtest_ets(
@@ -70,6 +76,26 @@ def backtest_xgb(series: pd.Series, *, horizon: int, n_lags: int = 12, search_it
     return backtestXgb(series, horizon=horizon, nLags=n_lags, searchIter=search_iter)
 
 
+def backtestNbeats(
+    series: pd.Series,
+    *,
+    horizon: int,
+    randomState: int = 42,
+    maxSteps: int = 200,
+) -> Dict[str, Any]:
+    forecast = nbeatsForecast(series, horizon=horizon, randomState=randomState, maxSteps=maxSteps)
+    return {
+        "model": "N-BEATS",
+        "forecast": forecast,
+    }
+
+
+def backtest_nbeats(
+    series: pd.Series, *, horizon: int, random_state: int = 42, max_steps: int = 200
+) -> Dict[str, Any]:
+    return backtestNbeats(series, horizon=horizon, randomState=random_state, maxSteps=max_steps)
+
+
 def run_backtests(series: pd.Series, *, horizon: int, models: List[str]) -> Dict[str, Any]:
     results: Dict[str, Any] = {}
     for name in models:
@@ -85,6 +111,14 @@ def run_backtests(series: pd.Series, *, horizon: int, models: List[str]) -> Dict
             try:
                 results["XGB"] = backtestXgb(series, horizon=horizon)
             except XgbUnavailable:
+                continue
+        elif _isNbeatsModelName(name):
+            try:
+                results["N-BEATS"] = backtestNbeats(series, horizon=horizon)
+            except NbeatsUnavailable:
+                continue
+            except ValueError:
+                # Short history (< 36 months) or invalid configuration; skip without failing the job.
                 continue
         else:
             raise ValueError(f"Unknown model '{name}'")

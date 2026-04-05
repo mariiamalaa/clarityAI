@@ -49,17 +49,24 @@ def _smape(yTrue: List[float], yPred: List[float]) -> float:
     return float(200.0 * np.mean(np.abs(yP - yT) / denom))
 
 
+def _normalizeModelToken(m: str) -> str:
+    u = m.upper().strip().replace("_", "-")
+    if u == "NBEATS":
+        return "N-BEATS"
+    return u
+
+
 def _resolveModels(models: Union[str, List[str]]) -> List[str]:
     if isinstance(models, list):
-        return [m.upper() for m in models]
+        return [_normalizeModelToken(m) for m in models]
     key = str(models).lower().strip()
     if key in ("ensemble", "all", ""):
-        return ["ETS", "THETA", "XGB"]
+        return ["ETS", "THETA", "XGB", "N-BEATS"]
     if key == "classical":
         return ["ETS", "THETA"]
     if key == "ml":
         return ["XGB"]
-    return [key.upper()]
+    return [_normalizeModelToken(key)]
 
 
 def _ensembleFromForecasts(modelForecasts: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
