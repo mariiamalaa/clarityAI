@@ -178,6 +178,7 @@ class TestZForecastApiFlow(unittest.TestCase):
             self.assertIn("history", result)
             self.assertIn("forecasts", result)
             self.assertIn("ensemble", result)
+            self.assertIn("modelWeights", result)
             self.assertTrue(len(result["forecasts"]) >= 1)
         return statusBody
 
@@ -221,7 +222,20 @@ class TestZForecastApiFlow(unittest.TestCase):
             "2024-11-01,159.0",
             "2024-12-01,170.2",
         ]
-        self._runFlow("\n".join(rows), horizon=6, expectDone=True)
+        body = self._runFlow("\n".join(rows), horizon=6, expectDone=True)
+        result = body["result"]
+
+        weights = result.get("modelWeights", {})
+        self.assertTrue(weights)
+        self.assertEqual(sum(weights.values()), 100)
+        if len(weights) >= 2:
+            self.assertTrue(all(0 < w < 100 for w in weights.values()))
+
+        modelSmape = [v["smape"] for v in result.get("smape", {}).values()]
+        self.assertTrue(modelSmape)
+        ensembleSmape = result.get("ensemble", {}).get("smape")
+        if ensembleSmape is not None:
+            self.assertLessEqual(ensembleSmape, min(modelSmape))
 
     def testShortSeriesUnder24MonthsDoesNotCrash(self):
         # 18 months — N-BEATS must skip (< 36) while ETS/Theta/XGB still run.
@@ -246,6 +260,7 @@ class TestZForecastApiFlow(unittest.TestCase):
         result = body["result"]
         self.assertIn("N-BEATS", result.get("failedModels", {}))
         self.assertNotIn("N-BEATS", result.get("forecasts", {}))
+        self.assertEqual(sum(result.get("modelWeights", {}).values()), 100)
 
     def testMissingMonthsStillRuns(self):
         # 36-month span with some missing months (dropped)
@@ -324,6 +339,9 @@ class TestZForecastApiFlow(unittest.TestCase):
         self.assertIn("forecasts", result)
         self.assertTrue("ETS" in result["forecasts"] or "XGB" in result["forecasts"])
         self.assertIn("failedModels", result)
+        weights = result.get("modelWeights", {})
+        self.assertEqual(sum(weights.values()), 100)
+        self.assertEqual(len(weights), 1)
 
 
 if __name__ == "__main__":
