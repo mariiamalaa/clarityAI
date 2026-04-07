@@ -7,3 +7,4 @@ python-dotenv==1.0.1
 xgboost==2.1.4
 neuralforecast>=1.7.0
 scipy>=1.10.0
+scikit-learn>=1.4.0
