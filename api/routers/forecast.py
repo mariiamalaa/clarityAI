@@ -21,6 +21,7 @@ if str(projectRoot) not in sys.path:
 
 from src.ioLoading import loadTable
 from src.monthlyAggregation import coerce_date, enforce_monthly
+from src.models.metaLearner import trainMetaLearner, ensembleForecastWithMetaLearner
 from src.trainPipeline import run_backtests
 
 router = APIRouter()
@@ -69,42 +70,6 @@ def _resolveModels(models: Union[str, List[str]]) -> List[str]:
     return [_normalizeModelToken(key)]
 
 
-def _ensembleFromForecasts(modelForecasts: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if not modelForecasts:
-        return None
-    keys = ["yhat", "yhat_lower", "yhat_upper"]
-    first = next(iter(modelForecasts.values()))
-    dates = first.get("dates")
-    if not dates:
-        return None
-    horizon = len(dates)
-
-    mats = {}
-    for k in keys:
-        vals = []
-        for f in modelForecasts.values():
-            arr = f.get(k)
-            if not isinstance(arr, list) or len(arr) != horizon:
-                break
-            vals.append(np.asarray(arr, dtype=float))
-        else:
-            mats[k] = np.vstack(vals) if vals else None
-
-    if any(k not in mats for k in keys):
-        return None
-
-    yhat = np.mean(mats["yhat"], axis=0)
-    yhatLower = np.mean(mats["yhat_lower"], axis=0)
-    yhatUpper = np.mean(mats["yhat_upper"], axis=0)
-    return {
-        "dates": dates,
-        "yhat": yhat.tolist(),
-        "yhat_lower": yhatLower.tolist(),
-        "yhat_upper": yhatUpper.tolist(),
-        "model": "Ensemble",
-    }
-
-
 def _findUploadPath(fileId: str) -> Path:
     for ext in [".csv", ".xlsx", ".xls"]:
         candidatePath = uploadsDir / f"{fileId}{ext}"
@@ -137,6 +102,7 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
             forecasts: Dict[str, Any] = {}
             metricsByModel: Dict[str, Any] = {}
             failedModels: Dict[str, str] = {}
+            backtestPredictions: Dict[str, List[float]] = {}
 
             if len(series) <= payload.horizon + 3:
                 raise ValueError("Not enough history for backtesting")
@@ -156,6 +122,7 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                     yPred = np.asarray(btForecast["yhat"], dtype=float)
                     modelMae = float(np.mean(np.abs(yTrue - yPred)))
                     metricsByModel[modelName.upper()] = {"smape": modelSmape, "mae": modelMae}
+                    backtestPredictions[modelName.upper()] = btForecast["yhat"]
 
                     fut = run_backtests(series, horizon=payload.horizon, models=[modelName])
                     if modelName.upper() not in fut:
@@ -165,15 +132,36 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                     failedModels[modelName.upper()] = str(e)
                     continue
 
-            ensemble = _ensembleFromForecasts(forecasts)
             if not forecasts:
                 raise RuntimeError("All models failed")
+
+            actuals = test.astype(float).tolist()
+            metaModel = trainMetaLearner(backtestPredictions, actuals, alpha=1.0)
+            ensemble = ensembleForecastWithMetaLearner(forecasts, metaModel)
+            modelWeights = metaModel.get("percentWeights", {})
+
+            if ensemble and "yhat" in ensemble:
+                ensembleSmape = _smape(actuals, ensemble["yhat"])
+                bestModel = min(metricsByModel.items(), key=lambda kv: kv[1]["smape"])[0]
+                bestSmape = metricsByModel[bestModel]["smape"]
+                if ensembleSmape > bestSmape:
+                    ensemble = {
+                        **forecasts[bestModel],
+                        "model": "Ensemble",
+                        "modelWeights": {bestModel: 100},
+                        "model_weights": {bestModel: 100},
+                    }
+                    modelWeights = {bestModel: 100}
+                    ensembleSmape = bestSmape
+                ensemble["smape"] = ensembleSmape
 
             return {
                 "forecasts": forecasts,
                 "smape": metricsByModel,
                 "metrics": metricsByModel,
                 "ensemble": ensemble,
+                "modelWeights": modelWeights,
+                "model_weights": modelWeights,
                 "failedModels": failedModels,
             }
 
