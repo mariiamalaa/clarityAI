@@ -179,6 +179,7 @@ class TestZForecastApiFlow(unittest.TestCase):
             self.assertIn("forecasts", result)
             self.assertIn("ensemble", result)
             self.assertIn("modelWeights", result)
+            self.assertIn("changepoints", result)
             self.assertTrue(len(result["forecasts"]) >= 1)
         return statusBody
 
@@ -236,6 +237,7 @@ class TestZForecastApiFlow(unittest.TestCase):
         ensembleSmape = result.get("ensemble", {}).get("smape")
         if ensembleSmape is not None:
             self.assertLessEqual(ensembleSmape, min(modelSmape))
+        self.assertIsInstance(result.get("changepoints"), list)
 
     def testShortSeriesUnder24MonthsDoesNotCrash(self):
         # 18 months — N-BEATS must skip (< 36) while ETS/Theta/XGB still run.
@@ -342,6 +344,33 @@ class TestZForecastApiFlow(unittest.TestCase):
         weights = result.get("modelWeights", {})
         self.assertEqual(sum(weights.values()), 100)
         self.assertEqual(len(weights), 1)
+
+    def testChangePointsEndpoint(self):
+        rows = ["date,metric"]
+        year = 2023
+        month = 1
+        value = 100.0
+        for i in range(24):
+            if i == 12:
+                value = 160.0
+            rows.append(f"{year:04d}-{month:02d}-01,{value + i * 0.3:.1f}")
+            month += 1
+            if month == 13:
+                month = 1
+                year += 1
+
+        body = self._runFlow("\n".join(rows), horizon=3, expectDone=True, models=["ETS", "THETA"])
+        jobId = body["jobId"]
+        cpRes = self.client.get(f"/changepoints/{jobId}", headers={"Origin": "http://localhost:5173"})
+        self.assertEqual(cpRes.status_code, 200, cpRes.text)
+        payload = cpRes.json()
+        self.assertIn("changepoints", payload)
+        self.assertIsInstance(payload["changepoints"], list)
+        for cp in payload["changepoints"]:
+            self.assertIn("date", cp)
+            self.assertIn("mean_before", cp)
+            self.assertIn("mean_after", cp)
+            self.assertIn("shift_pct", cp)
 
 
 if __name__ == "__main__":
