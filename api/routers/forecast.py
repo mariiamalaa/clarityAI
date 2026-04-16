@@ -20,6 +20,7 @@ if str(projectRoot) not in sys.path:
     sys.path.insert(0, str(projectRoot))
 
 from src.ioLoading import loadTable
+from src.changePoints import detectChangePoints
 from src.monthlyAggregation import coerce_date, enforce_monthly
 from src.models.metaLearner import trainMetaLearner, ensembleForecastWithMetaLearner
 from src.trainPipeline import run_backtests
@@ -154,12 +155,15 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                     modelWeights = {bestModel: 100}
                     ensembleSmape = bestSmape
                 ensemble["smape"] = ensembleSmape
+            changePoints = detectChangePoints(series, model="rbf", pen=10.0)
 
             return {
                 "forecasts": forecasts,
                 "smape": metricsByModel,
                 "metrics": metricsByModel,
                 "ensemble": ensemble,
+                "changePoints": changePoints,
+                "changepoints": changePoints,
                 "modelWeights": modelWeights,
                 "model_weights": modelWeights,
                 "failedModels": failedModels,
@@ -223,6 +227,26 @@ async def getStatus(job_id: str) -> Dict[str, Any]:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"jobId": job_id, **serializeJob(job)}
+
+
+@router.get("/changepoints/{job_id}")
+async def getChangePoints(job_id: str) -> Dict[str, Any]:
+    job = getJob(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status == "error":
+        raise HTTPException(status_code=400, detail=job.error or "Job failed")
+    if job.status != "done" or not job.result:
+        return {"jobId": job_id, "status": job.status, "changepoints": []}
+
+    result = job.result
+    if result.get("grouped"):
+        groups = result.get("groups", {})
+        groupedCp = {k: v.get("changepoints", v.get("changePoints", [])) for k, v in groups.items()}
+        return {"jobId": job_id, "status": "done", "grouped": True, "changepoints": groupedCp}
+
+    cps = result.get("changepoints", result.get("changePoints", []))
+    return {"jobId": job_id, "status": "done", "grouped": False, "changepoints": cps}
 
 
 @router.post("/forecast")
