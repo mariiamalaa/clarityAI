@@ -20,7 +20,8 @@ if str(projectRoot) not in sys.path:
     sys.path.insert(0, str(projectRoot))
 
 from src.ioLoading import loadTable
-from src.changepoints import detectChangePoints
+from src.changePoints import detectChangePoints
+from src.insights import generateInsights
 from src.monthlyAggregation import coerce_date, enforce_monthly
 from src.models.metaLearner import trainMetaLearner, ensembleForecastWithMetaLearner
 from src.trainPipeline import run_backtests
@@ -156,6 +157,13 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                     ensembleSmape = bestSmape
                 ensemble["smape"] = ensembleSmape
             changePoints = detectChangePoints(series, model="rbf", pen=10.0)
+            anomalies: List[Dict[str, Any]] = []
+            insights = generateInsights(
+                ensemble if isinstance(ensemble, dict) else {},
+                anomalies=anomalies,
+                changepoints=changePoints,
+                model_weights=modelWeights,
+            )
 
             return {
                 "forecasts": forecasts,
@@ -164,6 +172,8 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                 "ensemble": ensemble,
                 "changePoints": changePoints,
                 "changepoints": changePoints,
+                "anomalies": anomalies,
+                "insights": insights,
                 "modelWeights": modelWeights,
                 "model_weights": modelWeights,
                 "failedModels": failedModels,
