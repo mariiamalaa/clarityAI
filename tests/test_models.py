@@ -98,6 +98,26 @@ class TestModelWrappers(unittest.TestCase):
             nbeatsForecast(shortSeries, horizon=3)
         self.assertIn("36", str(ctx.exception))
 
+    def testInsightsDeterministic(self):
+        from src.insights import generateInsights
+
+        forecast = {
+            "dates": ["2026-01-01", "2026-02-01", "2026-03-01"],
+            "yhat": [100.0, 110.0, 120.0],
+            "yhat_lower": [90.0, 95.0, 96.0],
+            "yhat_upper": [110.0, 125.0, 144.0],
+            "smape": 12.34,
+        }
+        anomalies = [{"date": "2026-02-01", "severity": "medium"}]
+        changepoints = [{"date": "2026-02-01", "shift_pct": 25.0}]
+        modelWeights = {"ETS": 55, "XGB": 45}
+
+        first = generateInsights(forecast, anomalies, changepoints, modelWeights)
+        second = generateInsights(forecast, anomalies, changepoints, modelWeights)
+        self.assertEqual(first, second)
+        self.assertGreaterEqual(len(first), 4)
+        self.assertLessEqual(len(first), 6)
+
 
 class TestZForecastApiFlow(unittest.TestCase):
     """Class name uses Z_ so this suite runs after TestModelWrappers (N-BEATS/torch before XGB in same process)."""
@@ -180,6 +200,11 @@ class TestZForecastApiFlow(unittest.TestCase):
             self.assertIn("ensemble", result)
             self.assertIn("modelWeights", result)
             self.assertIn("changepoints", result)
+            self.assertIn("anomalies", result)
+            self.assertIn("insights", result)
+            self.assertIsInstance(result["insights"], list)
+            self.assertGreaterEqual(len(result["insights"]), 4)
+            self.assertLessEqual(len(result["insights"]), 6)
             self.assertTrue(len(result["forecasts"]) >= 1)
         return statusBody
 
@@ -238,6 +263,7 @@ class TestZForecastApiFlow(unittest.TestCase):
         if ensembleSmape is not None:
             self.assertLessEqual(ensembleSmape, min(modelSmape))
         self.assertIsInstance(result.get("changepoints"), list)
+        self.assertIsInstance(result.get("insights"), list)
 
     def testShortSeriesUnder24MonthsDoesNotCrash(self):
         # 18 months — N-BEATS must skip (< 36) while ETS/Theta/XGB still run.
