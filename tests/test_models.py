@@ -180,6 +180,7 @@ class TestZForecastApiFlow(unittest.TestCase):
             self.assertIn("ensemble", result)
             self.assertIn("modelWeights", result)
             self.assertIn("changepoints", result)
+            self.assertIn("anomalies", result)
             self.assertTrue(len(result["forecasts"]) >= 1)
         return statusBody
 
@@ -371,6 +372,37 @@ class TestZForecastApiFlow(unittest.TestCase):
             self.assertIn("mean_before", cp)
             self.assertIn("mean_after", cp)
             self.assertIn("shift_pct", cp)
+
+    def testAnomaliesEndpoint(self):
+        rows = ["date,metric"]
+        year = 2023
+        month = 1
+        base = 100.0
+        for i in range(30):
+            spike = 0.0
+            if i in (8, 20):
+                spike = 35.0
+            rows.append(f"{year:04d}-{month:02d}-01,{base + i * 0.8 + spike:.1f}")
+            month += 1
+            if month == 13:
+                month = 1
+                year += 1
+
+        body = self._runFlow("\n".join(rows), horizon=3, expectDone=True, models=["ETS", "THETA"])
+        jobId = body["jobId"]
+        anRes = self.client.get(f"/anomalies/{jobId}", headers={"Origin": "http://localhost:5173"})
+        self.assertEqual(anRes.status_code, 200, anRes.text)
+        payload = anRes.json()
+        self.assertIn("anomalies", payload)
+        self.assertIsInstance(payload["anomalies"], list)
+        for anomaly in payload["anomalies"]:
+            self.assertIn("date", anomaly)
+            self.assertIn("actual", anomaly)
+            self.assertIn("expected", anomaly)
+            self.assertIn("residual", anomaly)
+            self.assertIn("zscore", anomaly)
+            self.assertIn("detectors", anomaly)
+            self.assertIn("severity", anomaly)
 
 
 if __name__ == "__main__":
