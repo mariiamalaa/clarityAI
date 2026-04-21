@@ -4,6 +4,7 @@ import WizardStep2Columns from './components/WizardStep2Columns'
 import WizardStep3Config from './components/WizardStep3Config'
 import ForecastChart from './components/ForecastChart'
 import KpiCards from './components/KpiCards'
+import InsightsPanel from './components/InsightsPanel'
 import ModelAccuracyTable from './components/ModelAccuracyTable'
 import './App.css'
 
@@ -100,6 +101,7 @@ export default function App() {
                 <>
                   <KpiCards forecastResult={wizardState.forecastResult} />
                   <ForecastChart forecastResult={wizardState.forecastResult} />
+                  <InsightsPanel forecastResult={wizardState.forecastResult} />
                   <ModelAccuracyTable forecastResult={wizardState.forecastResult} />
                 </>
               )}
