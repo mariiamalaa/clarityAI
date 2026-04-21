@@ -6,7 +6,11 @@ import numpy as np
 from sklearn.linear_model import Ridge
 
 
-def _toPercentWeights(rawWeights: Dict[str, float]) -> Dict[str, int]:
+def _toPercentWeights(
+    rawWeights: Dict[str, float],
+    *,
+    enforceDiverseSplit: bool = False,
+) -> Dict[str, int]:
     if not rawWeights:
         return {}
 
@@ -20,6 +24,13 @@ def _toPercentWeights(rawWeights: Dict[str, float]) -> Dict[str, int]:
         vals = vals + 1e-6
 
     vals = vals / vals.sum()
+
+    if enforceDiverseSplit and len(models) > 1:
+        # Keep every model represented in the percentage view so dashboards
+        # don't show hard 0%/100% allocations on multi-model ensembles.
+        minShare = 0.01
+        vals = np.maximum(vals, minShare)
+        vals = vals / vals.sum()
     pct = vals * 100.0
 
     rounded = np.floor(pct).astype(int)
@@ -27,6 +38,21 @@ def _toPercentWeights(rawWeights: Dict[str, float]) -> Dict[str, int]:
     order = np.argsort(-(pct - rounded))
     for i in range(max(0, remainder)):
         rounded[order[i % len(models)]] += 1
+
+    if enforceDiverseSplit and len(models) > 1:
+        rounded = np.maximum(rounded, 1)
+        extra = int(rounded.sum()) - 100
+        if extra > 0:
+            donorOrder = np.argsort(-rounded)
+            for idx in donorOrder:
+                room = rounded[idx] - 1
+                if room <= 0:
+                    continue
+                take = min(room, extra)
+                rounded[idx] -= take
+                extra -= take
+                if extra == 0:
+                    break
 
     return {m: int(v) for m, v in zip(models, rounded.tolist())}
 
@@ -68,7 +94,7 @@ def trainMetaLearner(
     return {
         "modelNames": modelNames,
         "weights": weights,
-        "percentWeights": _toPercentWeights(weights),
+        "percentWeights": _toPercentWeights(weights, enforceDiverseSplit=True),
         "ridge": ridge,
         "fallbackEqualWeight": False,
     }
