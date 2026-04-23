@@ -4,6 +4,8 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceArea,
+  ReferenceDot,
   ReferenceLine,
   ReferenceDot,
   ReferenceArea,
@@ -12,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import axios from 'axios'
+import client from '../api/client'
 
 function formatDateLabel(isoString) {
   if (!isoString) return ''
@@ -127,11 +129,44 @@ function ForecastTooltip({ active, payload, label, anomalies = [], changepoints 
   )
 }
 
-export default function ForecastChart({ forecastResult }) {
+function severityColor(severity) {
+  if (severity === 'high') return '#DC2626'
+  if (severity === 'medium') return '#F59E0B'
+  return '#EAB308'
+}
+
+export default function ForecastChart({ forecastResult, forecastJobId }) {
   const history = forecastResult?.history
   const forecasts = forecastResult?.forecasts || {}
   const ensemble = forecastResult?.ensemble
-  const jobId = forecastResult?.jobId
+  const changePoints = forecastResult?.changepoints || forecastResult?.changePoints || []
+  const [anomalies, setAnomalies] = useState(forecastResult?.anomalies || [])
+  const [showAnomalies, setShowAnomalies] = useState(true)
+  const [showChangepoints, setShowChangepoints] = useState(true)
+
+  useEffect(() => {
+    setAnomalies(forecastResult?.anomalies || [])
+  }, [forecastResult])
+
+  useEffect(() => {
+    if (!forecastJobId) return
+    let cancelled = false
+    client
+      .get(`/anomalies/${forecastJobId}`)
+      .then((res) => {
+        if (cancelled) return
+        const payload = res?.data?.anomalies
+        if (Array.isArray(payload)) {
+          setAnomalies(payload)
+        }
+      })
+      .catch(() => {
+        // Non-blocking enhancement: chart still renders without anomaly overlay.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [forecastJobId])
 
   const modelNames = useMemo(() => Object.keys(forecasts || {}).sort(), [forecasts])
   const [visibleModels, setVisibleModels] = useState(() => {
@@ -201,6 +236,12 @@ export default function ForecastChart({ forecastResult }) {
       modelMaps[modelName] = buildSeriesMap(forecasts[modelName]?.dates, forecasts[modelName]?.yhat)
     }
 
+    const anomalyByDate = new Map()
+    for (const a of anomalies || []) {
+      if (!a?.date) continue
+      anomalyByDate.set(a.date, a)
+    }
+
     const allDates = new Set()
     ;(history?.dates || []).forEach((d) => allDates.add(d))
     ;(ensemble?.dates || []).forEach((d) => allDates.add(d))
@@ -217,13 +258,14 @@ export default function ForecastChart({ forecastResult }) {
         ensemble: ensembleDateMap.get(date) ?? null,
         ensembleLower: ensembleLowerMap.get(date) ?? null,
         ensembleUpper: ensembleUpperMap.get(date) ?? null,
+        anomaly: anomalyByDate.get(date) ?? null,
       }
       for (const modelName of modelNames) {
         row[`model_${modelName}`] = modelMaps[modelName].get(date) ?? null
       }
       return row
     })
-  }, [ensemble, forecasts, history, modelNames])
+  }, [anomalies, ensemble, forecasts, history, modelNames])
 
   const forecastStartDate = useMemo(() => {
     const dates = ensemble?.dates || modelNames.flatMap((m) => forecasts[m]?.dates || [])
@@ -231,6 +273,20 @@ export default function ForecastChart({ forecastResult }) {
   }, [ensemble, forecasts, modelNames])
 
   const showBand = Boolean(ensemble?.yhat_lower?.length && ensemble?.yhat_upper?.length)
+  const changePointBands = useMemo(() => {
+    const sorted = (changePoints || [])
+      .map((cp) => cp?.date)
+      .filter(Boolean)
+      .sort()
+    if (!sorted.length || !chartData.length) return []
+    const allDates = chartData.map((d) => d.date).filter(Boolean).sort()
+    if (!allDates.length) return []
+    const lastDate = allDates[allDates.length - 1]
+    return sorted.map((startDate, idx) => ({
+      x1: startDate,
+      x2: sorted[idx + 1] || lastDate,
+    }))
+  }, [changePoints, chartData])
 
   if (!forecastResult) {
     return null
@@ -240,6 +296,53 @@ export default function ForecastChart({ forecastResult }) {
     <div style={{ width: '100%', marginTop: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 600 }}>Model toggles</div>
+        <button
+          type="button"
+          onClick={() => setShowAnomalies((v) => !v)}
+          style={{
+            borderRadius: 999,
+            padding: '6px 10px',
+            border: '1px solid rgba(220,38,38,0.35)',
+            background: showAnomalies ? 'rgba(220,38,38,0.14)' : '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+          }}
+          aria-pressed={showAnomalies ? 'true' : 'false'}
+        >
+          Show anomalies
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowChangepoints((v) => !v)}
+          style={{
+            borderRadius: 999,
+            padding: '6px 10px',
+            border: '1px solid rgba(249,115,22,0.35)',
+            background: showChangepoints ? 'rgba(249,115,22,0.14)' : '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+          }}
+          aria-pressed={showChangepoints ? 'true' : 'false'}
+        >
+          Show changepoints
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setShowAnomalies(true)
+            setShowChangepoints(true)
+          }}
+          style={{
+            borderRadius: 999,
+            padding: '6px 10px',
+            border: '1px solid rgba(0,0,0,0.12)',
+            background: showAnomalies && showChangepoints ? 'rgba(20,184,166,0.14)' : '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+          }}
+        >
+          Show both
+        </button>
         {modelNames.map((m) => (
           <button
             key={m}
@@ -308,7 +411,18 @@ export default function ForecastChart({ forecastResult }) {
               tick={{ fill: 'rgba(0,0,0,0.65)', fontSize: 12 }}
               width={44}
             />
-            <Tooltip content={<ForecastTooltip anomalies={anomalies} changepoints={changepoints} />} />
+            <Tooltip content={<ForecastTooltip anomalies={anomalies} changepoints={changePoints} />} />
+            {showChangepoints &&
+              changePointBands.map((band) => (
+                <ReferenceArea
+                  key={`${band.x1}:${band.x2}`}
+                  x1={band.x1}
+                  x2={band.x2}
+                  fill="rgba(249, 115, 22, 0.12)"
+                  strokeOpacity={0}
+                  ifOverflow="extendDomain"
+                />
+              ))}
 
             {forecastStartDate && (
               <ReferenceLine
@@ -356,6 +470,21 @@ export default function ForecastChart({ forecastResult }) {
               dot={false}
               isAnimationActive={false}
             />
+            {showAnomalies &&
+              chartData
+                .filter((d) => d?.anomaly && d?.actual != null)
+                .map((d) => (
+                  <ReferenceDot
+                    key={`anomaly:${d.date}`}
+                    x={d.date}
+                    y={d.actual}
+                    r={5}
+                    fill={severityColor(d.anomaly.severity)}
+                    stroke="#fff"
+                    strokeWidth={1}
+                    ifOverflow="extendDomain"
+                  />
+                ))}
 
             <Line
               type="monotone"

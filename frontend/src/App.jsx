@@ -103,7 +103,10 @@ export default function App() {
                   <KpiCards forecastResult={wizardState.forecastResult} />
                   <InsightsPanel forecastResult={wizardState.forecastResult} />
                   <ModelContributionPanel forecastResult={wizardState.forecastResult} />
-                  <ForecastChart forecastResult={wizardState.forecastResult} />
+                  <ForecastChart
+                    forecastResult={wizardState.forecastResult}
+                    forecastJobId={wizardState.forecastJobId}
+                  />
                   <ModelAccuracyTable forecastResult={wizardState.forecastResult} />
                 </>
               )}

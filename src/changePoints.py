@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-__all__ = ["detectChangePoints"]
-
 from typing import Any, Dict, List
 
 import numpy as np
@@ -20,7 +18,6 @@ def detectChangePoints(
         return []
 
     signal = cleanSeries.to_numpy(dtype=float)
-    # fit_predict returns 1-based segment end indices; final index == len(signal)
     breakpoints = rpt.Pelt(model=model).fit_predict(signal, pen=pen)
     if not breakpoints:
         return []
@@ -30,6 +27,7 @@ def detectChangePoints(
     for bp in breakpoints:
         if bp >= len(signal):
             continue
+
         before = signal[segmentStart:bp]
         after = signal[bp:]
         if len(before) == 0 or len(after) == 0:

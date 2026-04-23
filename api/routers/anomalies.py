@@ -1,76 +1,59 @@
-from fastapi import APIRouter, HTTPException
+<<<<<<< HEAD
+from __future__ import annotations
+
 from pathlib import Path
 import sys
+from typing import Any, Dict
+
 import pandas as pd
+from fastapi import APIRouter, HTTPException
 
 from api.jobs import getJob
 
-# Import from src modules
 projectRoot = Path(__file__).parent.parent.parent
 if str(projectRoot) not in sys.path:
     sys.path.insert(0, str(projectRoot))
 
-from src.anomalies import detect_anomalies
-from src.ioLoading import loadTable
-from src.changepoints import detectChangePoints
-from src.monthlyAggregation import coerce_date, enforce_monthly
+from src.anomalies import detectAnomalies, stlResiduals
 
 router = APIRouter()
 
 
+def _seriesFromResult(result: Dict[str, Any]) -> pd.Series:
+    history = result.get("history", {})
+    dates = history.get("dates", [])
+    values = history.get("y", [])
+    if not dates or not values:
+        return pd.Series(dtype=float)
+    n = min(len(dates), len(values))
+    idx = pd.to_datetime(dates[:n], errors="coerce")
+    vals = pd.Series(values[:n], dtype=float)
+    valid = ~idx.isna()
+    return pd.Series(vals[valid].to_numpy(dtype=float), index=idx[valid]).sort_index()
+
+
 @router.get("/anomalies/{job_id}")
-async def get_anomalies(job_id: str):
-    """
-    Get anomalies for a completed forecast job.
-    """
+async def getAnomalies(job_id: str) -> Dict[str, Any]:
     job = getJob(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
     if job.status == "error":
         raise HTTPException(status_code=400, detail=job.error or "Job failed")
-
     if job.status != "done" or not job.result:
         return {"jobId": job_id, "status": job.status, "anomalies": []}
 
     result = job.result
+    if result.get("grouped"):
+        groups = result.get("groups", {})
+        grouped = {}
+        for groupKey, groupData in groups.items():
+            series = _seriesFromResult(groupData)
+            if series.empty:
+                grouped[groupKey] = []
+                continue
+            grouped[groupKey] = detectAnomalies(stlResiduals(series))
+        return {"jobId": job_id, "status": "done", "grouped": True, "anomalies": grouped}
 
-    # Load the original data
-    try:
-        from api.routers.forecast import _findUploadPath
-        filePath = _findUploadPath(result.get("fileId", ""))
-        df = loadTable(filePath)
-
-        # Coerce date column
-        df = coerce_date(df, result.get("dateCol", ""))
-
-        # Aggregate to monthly
-        monthlyDf, _ = enforce_monthly(
-            df,
-            date_col=result.get("dateCol", ""),
-            metric_col=result.get("metricCol", ""),
-            group_col=result.get("groupCol")
-        )
-
-        # Create series
-        series = pd.Series(
-            monthlyDf[result.get("metricCol", "")].to_numpy(dtype=float),
-            index=pd.DatetimeIndex(monthlyDf[result.get("dateCol", "")]),
-        ).sort_index()
-
-        # Detect anomalies
-        anomalies = detect_anomalies(series)
-
-        return {
-            "jobId": job_id,
-            "status": "done",
-            "anomalies": anomalies
-        }
-
-    except Exception as e:
-        # If anomaly detection fails, return empty list
-        return {
-            "jobId": job_id,
-            "status": "done",
-            "anomalies": []
-        }
+    series = _seriesFromResult(result)
+    anomalies = detectAnomalies(stlResiduals(series)) if not series.empty else []
+    return {"jobId": job_id, "status": "done", "grouped": False, "anomalies": anomalies}
