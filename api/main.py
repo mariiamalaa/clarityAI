@@ -47,12 +47,13 @@ async def internal_error_handler(request: Request, exc: Exception):
     )
 
 
-from api.routers import upload, profile, validate, forecast
+from api.routers import upload, profile, validate, forecast, anomalies
 
 app.include_router(upload.router, tags=["upload"])
 app.include_router(profile.router, tags=["profile"])
 app.include_router(validate.router, tags=["validate"])
 app.include_router(forecast.router, tags=["forecast"])
+app.include_router(anomalies.router, tags=["anomalies"])
 
 
 @app.get("/health")
