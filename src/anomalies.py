@@ -94,4 +94,3 @@ def detect_anomalies(
     z_threshold: float = 2.5,
 ) -> List[Dict[str, Any]]:
     return detectAnomalies(stl_output, zThreshold=z_threshold)
-

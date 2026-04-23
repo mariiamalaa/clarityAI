@@ -4,7 +4,9 @@ import WizardStep2Columns from './components/WizardStep2Columns'
 import WizardStep3Config from './components/WizardStep3Config'
 import ForecastChart from './components/ForecastChart'
 import KpiCards from './components/KpiCards'
+import ModelContributionPanel from './components/ModelContributionPanel'
 import ModelAccuracyTable from './components/ModelAccuracyTable'
+import InsightsPanel from './components/InsightsPanel'
 import './App.css'
 
 const STEPS = ['Upload', 'Columns', 'Configure', 'Results']
@@ -99,6 +101,8 @@ export default function App() {
               ) : (
                 <>
                   <KpiCards forecastResult={wizardState.forecastResult} />
+                  <InsightsPanel forecastResult={wizardState.forecastResult} />
+                  <ModelContributionPanel forecastResult={wizardState.forecastResult} />
                   <ForecastChart
                     forecastResult={wizardState.forecastResult}
                     forecastJobId={wizardState.forecastJobId}

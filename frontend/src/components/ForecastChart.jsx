@@ -7,6 +7,8 @@ import {
   ReferenceArea,
   ReferenceDot,
   ReferenceLine,
+  ReferenceDot,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -29,13 +31,18 @@ function buildSeriesMap(dates = [], values = []) {
   return out
 }
 
-function ForecastTooltip({ active, payload, label }) {
+function ForecastTooltip({ active, payload, label, anomalies = [], changepoints = [] }) {
   if (!active || !payload?.length) return null
   const row = payload[0]?.payload
   const range =
     row?.ensembleLower != null && row?.ensembleUpper != null
       ? `${row.ensembleLower.toFixed(2)} – ${row.ensembleUpper.toFixed(2)}`
       : null
+
+  // Find anomaly for this date
+  const anomaly = anomalies.find(a => a.date === label)
+  // Find changepoint for this date
+  const changepoint = changepoints.find(cp => cp.date === label)
 
   return (
     <div
@@ -67,27 +74,43 @@ function ForecastTooltip({ active, payload, label }) {
           <span>{range}</span>
         </div>
       )}
-      {row?.anomaly && (
-        <>
-          <div style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 8 }}>
-            <div style={{ opacity: 0.9 }}>
-              <span style={{ opacity: 0.7 }}>Expected: </span>
-              <span>{Number(row.anomaly.expected).toFixed(2)}</span>
-            </div>
-            <div style={{ opacity: 0.9 }}>
-              <span style={{ opacity: 0.7 }}>Residual: </span>
-              <span>{Number(row.anomaly.residual).toFixed(2)}</span>
-            </div>
-            <div style={{ opacity: 0.9 }}>
-              <span style={{ opacity: 0.7 }}>Z-score: </span>
-              <span>{Number(row.anomaly.zscore).toFixed(2)}</span>
-            </div>
-            <div style={{ opacity: 0.9 }}>
-              <span style={{ opacity: 0.7 }}>Detectors: </span>
-              <span>{(row.anomaly.detectors || []).join(', ') || 'n/a'}</span>
-            </div>
+      {anomaly && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.2)' }}>
+          <div style={{ fontWeight: 600, color: anomaly.severity === 'high' ? '#EF4444' : anomaly.severity === 'medium' ? '#F59E0B' : '#10B981', marginBottom: 4 }}>
+            ⚠️ Anomaly Detected
           </div>
-        </>
+          <div style={{ opacity: 0.9 }}>
+            <span style={{ opacity: 0.7 }}>Expected: </span>
+            <span>{anomaly.expected.toFixed(2)}</span>
+          </div>
+          <div style={{ opacity: 0.9 }}>
+            <span style={{ opacity: 0.7 }}>Z-score: </span>
+            <span>{anomaly.zscore.toFixed(2)}</span>
+          </div>
+          <div style={{ opacity: 0.9 }}>
+            <span style={{ opacity: 0.7 }}>Detectors: </span>
+            <span>{anomaly.detectors.join(', ')}</span>
+          </div>
+        </div>
+      )}
+      {changepoint && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.2)' }}>
+          <div style={{ fontWeight: 600, color: '#8B5CF6', marginBottom: 4 }}>
+            📈 Changepoint Detected
+          </div>
+          <div style={{ opacity: 0.9 }}>
+            <span style={{ opacity: 0.7 }}>Before: </span>
+            <span>{changepoint.mean_before.toFixed(2)}</span>
+          </div>
+          <div style={{ opacity: 0.9 }}>
+            <span style={{ opacity: 0.7 }}>After: </span>
+            <span>{changepoint.mean_after.toFixed(2)}</span>
+          </div>
+          <div style={{ opacity: 0.9 }}>
+            <span style={{ opacity: 0.7 }}>Shift: </span>
+            <span>{changepoint.shift_pct > 0 ? '+' : ''}{changepoint.shift_pct.toFixed(1)}%</span>
+          </div>
+        </div>
       )}
       {Object.keys(row || {})
         .filter((k) => k.startsWith('model_'))
@@ -154,6 +177,12 @@ export default function ForecastChart({ forecastResult, forecastJobId }) {
     return init
   })
 
+  // New state for anomalies and changepoints
+  const [showAnomalies, setShowAnomalies] = useState(true)
+  const [showChangepoints, setShowChangepoints] = useState(true)
+  const [anomalies, setAnomalies] = useState([])
+  const [changepoints, setChangepoints] = useState([])
+
   useEffect(() => {
     setVisibleModels((prev) => {
       const next = { ...prev }
@@ -166,6 +195,34 @@ export default function ForecastChart({ forecastResult, forecastJobId }) {
       return next
     })
   }, [modelNames])
+
+  // Fetch anomalies and changepoints when jobId is available
+  useEffect(() => {
+    if (!jobId) return
+
+    const fetchAnomalies = async () => {
+      try {
+        const response = await axios.get(`/api/anomalies/${jobId}`)
+        setAnomalies(response.data.anomalies || [])
+      } catch (error) {
+        console.warn('Failed to fetch anomalies:', error)
+        setAnomalies([])
+      }
+    }
+
+    const fetchChangepoints = async () => {
+      try {
+        const response = await axios.get(`/api/changepoints/${jobId}`)
+        setChangepoints(response.data.changepoints || [])
+      } catch (error) {
+        console.warn('Failed to fetch changepoints:', error)
+        setChangepoints([])
+      }
+    }
+
+    fetchAnomalies()
+    fetchChangepoints()
+  }, [jobId])
 
   const chartData = useMemo(() => {
     const actualMap = buildSeriesMap(history?.dates, history?.y)
@@ -304,6 +361,38 @@ export default function ForecastChart({ forecastResult, forecastJobId }) {
             {m}
           </button>
         ))}
+        <div style={{ width: 1, height: 20, background: 'rgba(0,0,0,0.12)', margin: '0 8px' }} />
+        <div style={{ fontWeight: 600 }}>Overlays</div>
+        <button
+          type="button"
+          onClick={() => setShowAnomalies(!showAnomalies)}
+          style={{
+            borderRadius: 999,
+            padding: '6px 10px',
+            border: '1px solid rgba(0,0,0,0.12)',
+            background: showAnomalies ? 'rgba(239, 68, 68, 0.14)' : '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+          }}
+          aria-pressed={showAnomalies ? 'true' : 'false'}
+        >
+          Anomalies ({anomalies.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowChangepoints(!showChangepoints)}
+          style={{
+            borderRadius: 999,
+            padding: '6px 10px',
+            border: '1px solid rgba(0,0,0,0.12)',
+            background: showChangepoints ? 'rgba(139, 92, 246, 0.14)' : '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+          }}
+          aria-pressed={showChangepoints ? 'true' : 'false'}
+        >
+          Changepoints ({changepoints.length})
+        </button>
       </div>
 
       <div style={{ width: '100%', height: 420 }}>
@@ -322,7 +411,7 @@ export default function ForecastChart({ forecastResult, forecastJobId }) {
               tick={{ fill: 'rgba(0,0,0,0.65)', fontSize: 12 }}
               width={44}
             />
-            <Tooltip content={<ForecastTooltip />} />
+            <Tooltip content={<ForecastTooltip anomalies={anomalies} changepoints={changePoints} />} />
             {showChangepoints &&
               changePointBands.map((band) => (
                 <ReferenceArea
@@ -343,6 +432,24 @@ export default function ForecastChart({ forecastResult, forecastJobId }) {
                 ifOverflow="extendDomain"
               />
             )}
+
+            {/* Changepoint bands */}
+            {showChangepoints && changepoints.map((cp, idx) => {
+              // Find the next changepoint to create a band
+              const nextCp = changepoints[idx + 1]
+              const endDate = nextCp ? nextCp.date : null
+              return (
+                <ReferenceArea
+                  key={`changepoint-${idx}`}
+                  x1={cp.date}
+                  x2={endDate}
+                  fill="rgba(139, 92, 246, 0.08)"
+                  fillOpacity={0.3}
+                  stroke="rgba(139, 92, 246, 0.4)"
+                  strokeDasharray="2 2"
+                />
+              )
+            })}
 
             {showBand && (
               <Area
@@ -387,6 +494,19 @@ export default function ForecastChart({ forecastResult, forecastJobId }) {
               dot={false}
               isAnimationActive={false}
             />
+
+            {/* Anomaly dots */}
+            {showAnomalies && anomalies.map((anomaly, idx) => (
+              <ReferenceDot
+                key={`anomaly-${idx}`}
+                x={anomaly.date}
+                y={anomaly.actual}
+                r={6}
+                fill={anomaly.severity === 'high' ? '#EF4444' : anomaly.severity === 'medium' ? '#F59E0B' : '#10B981'}
+                stroke="#fff"
+                strokeWidth={2}
+              />
+            ))}
 
             {modelNames.map((m, idx) => {
               if (!visibleModels[m]) return null

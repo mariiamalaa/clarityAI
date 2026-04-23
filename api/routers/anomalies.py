@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,4 +57,3 @@ async def getAnomalies(job_id: str) -> Dict[str, Any]:
     series = _seriesFromResult(result)
     anomalies = detectAnomalies(stlResiduals(series)) if not series.empty else []
     return {"jobId": job_id, "status": "done", "grouped": False, "anomalies": anomalies}
-

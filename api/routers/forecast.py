@@ -25,6 +25,7 @@ from src.changePoints import detectChangePoints
 from src.monthlyAggregation import coerce_date, enforce_monthly
 from src.models.metaLearner import trainMetaLearner, ensembleForecastWithMetaLearner
 from src.trainPipeline import run_backtests
+from src.insights import generate_insights
 
 router = APIRouter()
 
@@ -159,6 +160,11 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
             changePoints = detectChangePoints(series, model="rbf", pen=10.0)
             anomalies = detectAnomalies(stlResiduals(series))
 
+            # Generate insights
+            from src.anomalies import detect_anomalies
+            anomalies = detect_anomalies(series)
+            insights = generate_insights(core, anomalies, changePoints, modelWeights)
+
             return {
                 "forecasts": forecasts,
                 "smape": metricsByModel,
@@ -170,6 +176,7 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                 "modelWeights": modelWeights,
                 "model_weights": modelWeights,
                 "failedModels": failedModels,
+                "insights": insights,
             }
 
         if payload.groupCol:
