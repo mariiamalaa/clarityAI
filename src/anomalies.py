@@ -82,15 +82,3 @@ def detectAnomalies(
             }
         )
     return anomalies
-
-
-def stl_residuals(series: pd.Series, *, seasonal_period: int = 12) -> Dict[str, List[float]]:
-    return stlResiduals(series, seasonalPeriod=seasonal_period)
-
-
-def detect_anomalies(
-    stl_output: Dict[str, List[float]],
-    *,
-    z_threshold: float = 2.5,
-) -> List[Dict[str, Any]]:
-    return detectAnomalies(stl_output, zThreshold=z_threshold)
