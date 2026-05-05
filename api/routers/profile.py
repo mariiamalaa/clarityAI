@@ -80,6 +80,7 @@ async def getProfile(fileId: str):
                     row[key] = float(value) if isinstance(value, np.floating) else int(value)
         
         return {
+            "columns": list(df.columns),
             "suggestions": suggestions,
             "characteristics": characteristics,
             "preview": preview

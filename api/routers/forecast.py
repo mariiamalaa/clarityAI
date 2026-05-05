@@ -1,7 +1,6 @@
-"""Core forecast endpoint + async job tracking."""
-
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 from threading import Thread
@@ -22,10 +21,11 @@ if str(projectRoot) not in sys.path:
 from src.ioLoading import loadTable
 from src.anomalies import detectAnomalies, stlResiduals
 from src.changePoints import detectChangePoints
-from src.monthlyAggregation import coerce_date, enforce_monthly
+from src.monthlyAggregation import coerceDate, enforceMonthly
 from src.models.metaLearner import trainMetaLearner, ensembleForecastWithMetaLearner
-from src.trainPipeline import run_backtests
-from src.insights import generate_insights
+from src.trainPipeline import runBacktests
+from src.insights import generateInsights
+from src.segmentation import segmentByGroups, computeGrowthRates
 
 router = APIRouter()
 
@@ -88,14 +88,14 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
         df = loadTable(filePath)
 
         setJob(jobId, progress="Coercing date column...")
-        df = coerce_date(df, payload.dateCol)
+        df = coerceDate(df, payload.dateCol)
 
         setJob(jobId, progress="Aggregating to monthly...")
-        monthlyDf, monthlyMsg = enforce_monthly(
+        monthlyDf, monthlyMsg = enforceMonthly(
             df,
-            date_col=payload.dateCol,
-            metric_col=payload.metricCol,
-            group_col=payload.groupCol,
+            dateCol=payload.dateCol,
+            metricCol=payload.metricCol,
+            groupCol=payload.groupCol,
         )
 
         requestedModels = _resolveModels(payload.models)
@@ -116,7 +116,7 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
             # Backtest + future forecast (future forecast uses full series)
             for modelName in requestedModels:
                 try:
-                    bt = run_backtests(train, horizon=payload.horizon, models=[modelName])
+                    bt = runBacktests(train, horizon=payload.horizon, models=[modelName])
                     if modelName.upper() not in bt:
                         raise RuntimeError("Model unavailable")
                     btForecast = bt[modelName.upper()]["forecast"]
@@ -127,7 +127,7 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                     metricsByModel[modelName.upper()] = {"smape": modelSmape, "mae": modelMae}
                     backtestPredictions[modelName.upper()] = btForecast["yhat"]
 
-                    fut = run_backtests(series, horizon=payload.horizon, models=[modelName])
+                    fut = runBacktests(series, horizon=payload.horizon, models=[modelName])
                     if modelName.upper() not in fut:
                         raise RuntimeError("Model unavailable")
                     forecasts[modelName.upper()] = fut[modelName.upper()]["forecast"]
@@ -159,12 +159,6 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                 ensemble["smape"] = ensembleSmape
             changePoints = detectChangePoints(series, model="rbf", pen=10.0)
             anomalies = detectAnomalies(stlResiduals(series))
-
-            # Generate insights
-            from src.anomalies import detect_anomalies
-            anomalies = detect_anomalies(series)
-            insights = generate_insights(core, anomalies, changePoints, modelWeights)
-
             return {
                 "forecasts": forecasts,
                 "smape": metricsByModel,
@@ -176,27 +170,39 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                 "modelWeights": modelWeights,
                 "model_weights": modelWeights,
                 "failedModels": failedModels,
-                "insights": insights,
             }
 
         if payload.groupCol:
+            # Use segmentation module for group processing
+            setJob(jobId, progress="Segmenting data by groups...")
+            segments = segmentByGroups(
+                monthlyDf,
+                groupCol=payload.groupCol,
+                dateCol=payload.dateCol,
+                metricCol=payload.metricCol,
+                minGroupSize=payload.horizon + 3
+            )
+
             groupedResults: Dict[str, Any] = {}
-            for groupValue, gdf in monthlyDf.groupby(payload.groupCol, dropna=False):
-                setJob(jobId, progress=f"Running group: {groupValue}")
-                series = pd.Series(
-                    gdf[payload.metricCol].to_numpy(dtype=float),
-                    index=pd.DatetimeIndex(gdf[payload.dateCol]),
-                ).sort_index()
+            for groupName, series in segments.items():
+                setJob(jobId, progress=f"Running forecast for group: {groupName}")
                 core = runForSeries(series)
                 history = {
                     "dates": [d.isoformat() for d in series.index.to_pydatetime()],
                     "y": series.astype(float).tolist(),
                 }
-                groupedResults[str(groupValue)] = {**core, "history": history}
+                group_forecast = {"horizon": payload.horizon, "history": history, **core}
+                insights = generateInsights(group_forecast, core["anomalies"], core["changePoints"], core["modelWeights"])
+                groupedResults[groupName] = {**group_forecast, "insights": insights}
+
+            # Compute growth rates for summary
+            growthStats = computeGrowthRates(segments, payload.horizon)
+
             result: Dict[str, Any] = {
                 "message": monthlyMsg,
                 "grouped": True,
                 "groups": groupedResults,
+                "growthStats": growthStats,
                 "horizon": payload.horizon,
                 "modelsRequested": requestedModels,
             }
@@ -218,8 +224,20 @@ def _runForecastJob(jobId: str, payload: ForecastRequest) -> None:
                 "history": history,
                 **core,
             }
+            result["insights"] = generateInsights(result, core["anomalies"], core["changePoints"], core["modelWeights"])
 
         setJobDone(jobId, result=result)
+
+        # Persist JSON report so GET /report/{job_id} can serve it
+        try:
+            reportsDir = Path(__file__).parent.parent.parent / "artifacts" / "reports"
+            reportsDir.mkdir(parents=True, exist_ok=True)
+            (reportsDir / f"{jobId}.json").write_text(
+                json.dumps(result, default=str), encoding="utf-8"
+            )
+        except Exception:
+            pass  # Report saving is non-blocking — never fail the job
+
     except Exception as e:
         setJobError(jobId, error=str(e))
 
