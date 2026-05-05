@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+import os
 
 import pandas as pd
 
@@ -13,6 +14,11 @@ class NbeatsUnavailable(RuntimeError):
 
 class NbeatsError(ValueError):
     pass
+
+
+# macOS OpenMP collisions can occur when running XGBoost and torch in one process.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 
 def _inferMonthlyFreq(index: pd.DatetimeIndex) -> str:
@@ -43,7 +49,7 @@ def nbeatsForecast(
     horizon: int,
     randomState: int = 42,
     level: int = 95,
-    maxSteps: int = 200,
+    maxSteps: int = 80,
 ) -> Dict[str, Any]:
     """
     N-BEATS forecast via neuralforecast. Requires at least 36 monthly observations.
@@ -65,8 +71,17 @@ def nbeatsForecast(
         from neuralforecast.losses.pytorch import MAE
         from neuralforecast.models import NBEATS
         from neuralforecast.utils import PredictionIntervals
+        import torch
     except Exception as e:  # pragma: no cover
         raise NbeatsUnavailable("neuralforecast (or its dependencies) is not available") from e
+
+    try:
+        torch.set_num_threads(1)
+        if hasattr(torch, "set_num_interop_threads"):
+            torch.set_num_interop_threads(1)
+    except Exception:
+        # Thread tuning is best-effort and should never block forecasts.
+        pass
 
     y = series.astype(float)
     df = _seriesToNeuralDf(y)
@@ -123,14 +138,3 @@ def nbeatsForecast(
     }
 
 
-def nbeats_forecast(
-    series: pd.Series,
-    *,
-    horizon: int,
-    random_state: int = 42,
-    level: int = 95,
-    max_steps: int = 200,
-) -> Dict[str, Any]:
-    return nbeatsForecast(
-        series, horizon=horizon, randomState=random_state, level=level, maxSteps=max_steps
-    )

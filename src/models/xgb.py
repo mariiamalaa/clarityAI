@@ -190,23 +190,3 @@ def xgbForecast(
         "yhat_upper": (yhat + band).tolist(),
         "model": "XGB",
     }
-
-
-def xgb_forecast(
-    series: pd.Series,
-    *,
-    horizon: int,
-    n_lags: int = 12,
-    search_iter: int = 20,
-    val_fraction: float = 0.2,
-    random_state: int = 42,
-) -> Dict[str, Any]:
-    return xgbForecast(
-        series,
-        horizon=horizon,
-        nLags=n_lags,
-        searchIter=search_iter,
-        valFraction=val_fraction,
-        randomState=random_state,
-    )
-
