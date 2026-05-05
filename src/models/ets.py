@@ -47,17 +47,20 @@ def _try_statsmodels_fit_forecast(
     except Exception:
         return None
 
-    model = ExponentialSmoothing(
-        y.astype(float),
-        trend="add",
-        seasonal=seasonal,
-        seasonal_periods=seasonal_periods,
-        initialization_method="estimated",
-    )
-    fitted = model.fit(optimized=True)
-    yhat = fitted.forecast(horizon).to_numpy(dtype=float)
-    fitted_values = fitted.fittedvalues.to_numpy(dtype=float)
-    return yhat, fitted_values
+    try:
+        model = ExponentialSmoothing(
+            y.astype(float),
+            trend="add",
+            seasonal=seasonal,
+            seasonal_periods=seasonal_periods,
+            initialization_method="estimated",
+        )
+        fitted = model.fit(optimized=True)
+        yhat = fitted.forecast(horizon).to_numpy(dtype=float)
+        fitted_values = fitted.fittedvalues.to_numpy(dtype=float)
+        return yhat, fitted_values
+    except Exception:
+        return None
 
 
 @dataclass
@@ -126,7 +129,7 @@ def _hw_fit_forecast_mul(
     return yhat, fitted
 
 
-def ets_forecast(
+def etsForecast(
     series: pd.Series,
     *,
     horizon: int,

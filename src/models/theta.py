@@ -67,21 +67,24 @@ def _fitForecastWithIntervals(
         model = ThetaModel(y)
     results = model.fit()
 
-    if not hasattr(results, "get_forecast"):
-        raise ThetaUnavailable("statsmodels ThetaModel result missing get_forecast (too old)")
-
-    forecastRes = results.get_forecast(steps=horizon)
-
-    predicted = getattr(forecastRes, "predicted_mean", None)
-    if predicted is None:
-        raise ThetaError("Theta forecast did not provide predicted_mean")
-
-    confInt = None
-    if hasattr(forecastRes, "conf_int"):
-        try:
-            confInt = forecastRes.conf_int(alpha=alpha)
-        except TypeError:
-            confInt = forecastRes.conf_int()
+    # Newer statsmodels ThetaResults expose `forecast` + `prediction_intervals`.
+    if hasattr(results, "forecast") and hasattr(results, "prediction_intervals"):
+        predicted = results.forecast(steps=horizon)
+        confInt = results.prediction_intervals(steps=horizon, alpha=alpha)
+    elif hasattr(results, "get_forecast"):
+        # Backward-compatible path for APIs that return a forecast result object.
+        forecastRes = results.get_forecast(steps=horizon)
+        predicted = getattr(forecastRes, "predicted_mean", None)
+        if predicted is None:
+            raise ThetaError("Theta forecast did not provide predicted_mean")
+        confInt = None
+        if hasattr(forecastRes, "conf_int"):
+            try:
+                confInt = forecastRes.conf_int(alpha=alpha)
+            except TypeError:
+                confInt = forecastRes.conf_int()
+    else:
+        raise ThetaUnavailable("statsmodels ThetaModel forecast APIs not available")
 
     if confInt is None:
         raise ThetaUnavailable("Theta forecast confidence intervals not available in this statsmodels")
@@ -135,9 +138,3 @@ def thetaForecast(
         "yhat_upper": yhatUpper.tolist(),
         "model": "Theta",
     }
-
-
-# Backwards-compatible alias (repo currently uses snake_case elsewhere)
-def theta_forecast(series: pd.Series, *, horizon: int, alpha: float = 0.05) -> Dict[str, Any]:
-    return thetaForecast(series, horizon=horizon, alpha=alpha)
-
