@@ -67,27 +67,4 @@ def serializeJob(job: Job) -> Dict[str, Any]:
     return asdict(job)
 
 
-# Backwards-compatible snake_case aliases (existing code may import these)
-def create_job(progress: str = "Queued") -> str:
-    return createJob(progress=progress)
-
-
-def get_job(job_id: str) -> Optional[Job]:
-    return getJob(jobId=job_id)
-
-
-def set_job(job_id: str, *, status: Optional[str] = None, progress: Optional[str] = None) -> None:
-    return setJob(jobId=job_id, status=status, progress=progress)
-
-
-def set_job_done(job_id: str, *, result: Dict[str, Any]) -> None:
-    return setJobDone(jobId=job_id, result=result)
-
-
-def set_job_error(job_id: str, *, error: str) -> None:
-    return setJobError(jobId=job_id, error=error)
-
-
-def serialize_job(job: Job) -> Dict[str, Any]:
-    return serializeJob(job)
 

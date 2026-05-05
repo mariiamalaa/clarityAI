@@ -40,20 +40,15 @@ async def internal_error_handler(request: Request, exc: Exception):
         content={"error": "Internal server error"},
     )
 
-    # ...existing code...
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Internal server error", "detail": str(exc)},
-    )
 
-
-from api.routers import upload, profile, validate, forecast, anomalies
+from api.routers import upload, profile, validate, forecast, anomalies, report
 
 app.include_router(upload.router, tags=["upload"])
 app.include_router(profile.router, tags=["profile"])
 app.include_router(validate.router, tags=["validate"])
 app.include_router(forecast.router, tags=["forecast"])
 app.include_router(anomalies.router, tags=["anomalies"])
+app.include_router(report.router, tags=["report"])
 
 
 @app.get("/health")
