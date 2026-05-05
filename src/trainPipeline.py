@@ -4,10 +4,10 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from src.models.ets import ets_forecast, EtsError
+from src.models.ets import etsForecast, EtsError
 from src.models.nbeats import nbeatsForecast, NbeatsUnavailable
-from src.models.theta import theta_forecast, ThetaUnavailable, ThetaError
-from src.models.xgb import xgb_forecast, XgbUnavailable, XgbError
+from src.models.theta import thetaForecast, ThetaUnavailable, ThetaError
+from src.models.xgb import xgbForecast, XgbUnavailable, XgbError
 
 
 def _isNbeatsModelName(name: str) -> bool:
@@ -15,24 +15,17 @@ def _isNbeatsModelName(name: str) -> bool:
     return n in ("N-BEATS", "NBEATS")
 
 
-def backtest_ets(
+def backtestEts(
     series: pd.Series,
     *,
     horizon: int,
-    seasonal_periods: int = 12,
+    seasonalPeriods: int = 12,
 ) -> Dict[str, Any]:
-    """
-    Minimal backtesting entrypoint for ETS.
-    Week-2 ready: provides a clean hook for adding more models later.
-    """
+    """Minimal backtesting entrypoint for ETS."""
     if len(series) < 12:
         raise EtsError("ETS requires at least 12 rows to backtest")
-
-    forecast = ets_forecast(series, horizon=horizon, seasonal_periods=seasonal_periods)
-    return {
-        "model": "ETS",
-        "forecast": forecast,
-    }
+    forecast = etsForecast(series, horizon=horizon, seasonal_periods=seasonalPeriods)
+    return {"model": "ETS", "forecast": forecast}
 
 
 def backtestTheta(
@@ -43,16 +36,8 @@ def backtestTheta(
 ) -> Dict[str, Any]:
     if len(series) < 3:
         raise ThetaError("Theta requires at least 3 rows to backtest")
-
-    forecast = theta_forecast(series, horizon=horizon, alpha=alpha)
-    return {
-        "model": "Theta",
-        "forecast": forecast,
-    }
-
-
-def backtest_theta(series: pd.Series, *, horizon: int, alpha: float = 0.05) -> Dict[str, Any]:
-    return backtestTheta(series, horizon=horizon, alpha=alpha)
+    forecast = thetaForecast(series, horizon=horizon, alpha=alpha)
+    return {"model": "Theta", "forecast": forecast}
 
 
 def backtestXgb(
@@ -64,16 +49,8 @@ def backtestXgb(
 ) -> Dict[str, Any]:
     if len(series) <= nLags:
         raise XgbError("XGB requires more rows than nLags to backtest")
-
-    forecast = xgb_forecast(series, horizon=horizon, n_lags=nLags, search_iter=searchIter)
-    return {
-        "model": "XGB",
-        "forecast": forecast,
-    }
-
-
-def backtest_xgb(series: pd.Series, *, horizon: int, n_lags: int = 12, search_iter: int = 20) -> Dict[str, Any]:
-    return backtestXgb(series, horizon=horizon, nLags=n_lags, searchIter=search_iter)
+    forecast = xgbForecast(series, horizon=horizon, nLags=nLags, searchIter=searchIter)
+    return {"model": "XGB", "forecast": forecast}
 
 
 def backtestNbeats(
@@ -81,31 +58,21 @@ def backtestNbeats(
     *,
     horizon: int,
     randomState: int = 42,
-    maxSteps: int = 200,
+    maxSteps: int = 80,
 ) -> Dict[str, Any]:
     forecast = nbeatsForecast(series, horizon=horizon, randomState=randomState, maxSteps=maxSteps)
-    return {
-        "model": "N-BEATS",
-        "forecast": forecast,
-    }
+    return {"model": "N-BEATS", "forecast": forecast}
 
 
-def backtest_nbeats(
-    series: pd.Series, *, horizon: int, random_state: int = 42, max_steps: int = 200
-) -> Dict[str, Any]:
-    return backtestNbeats(series, horizon=horizon, randomState=random_state, maxSteps=max_steps)
-
-
-def run_backtests(series: pd.Series, *, horizon: int, models: List[str]) -> Dict[str, Any]:
+def runBacktests(series: pd.Series, *, horizon: int, models: List[str]) -> Dict[str, Any]:
     results: Dict[str, Any] = {}
     for name in models:
         if name.upper() == "ETS":
-            results["ETS"] = backtest_ets(series, horizon=horizon)
+            results["ETS"] = backtestEts(series, horizon=horizon)
         elif name.upper() == "THETA":
             try:
                 results["THETA"] = backtestTheta(series, horizon=horizon)
             except ThetaUnavailable:
-                # Gracefully skip if statsmodels is missing/too old for ThetaModel.
                 continue
         elif name.upper() in ("XGB", "XGBOOST"):
             try:
@@ -118,9 +85,25 @@ def run_backtests(series: pd.Series, *, horizon: int, models: List[str]) -> Dict
             except NbeatsUnavailable:
                 continue
             except ValueError:
-                # Short history (< 36 months) or invalid configuration; skip without failing the job.
+                # Short history (< 36 months); skip without failing the job.
                 continue
         else:
             raise ValueError(f"Unknown model '{name}'")
     return results
 
+
+# ---------- backwards-compatible snake_case aliases ----------
+def run_backtests(series: pd.Series, *, horizon: int, models: List[str]) -> Dict[str, Any]:
+    return runBacktests(series, horizon=horizon, models=models)
+
+def backtest_ets(series: pd.Series, *, horizon: int, seasonal_periods: int = 12) -> Dict[str, Any]:
+    return backtestEts(series, horizon=horizon, seasonalPeriods=seasonal_periods)
+
+def backtest_theta(series: pd.Series, *, horizon: int, alpha: float = 0.05) -> Dict[str, Any]:
+    return backtestTheta(series, horizon=horizon, alpha=alpha)
+
+def backtest_xgb(series: pd.Series, *, horizon: int, n_lags: int = 12, search_iter: int = 20) -> Dict[str, Any]:
+    return backtestXgb(series, horizon=horizon, nLags=n_lags, searchIter=search_iter)
+
+def backtest_nbeats(series: pd.Series, *, horizon: int, random_state: int = 42, max_steps: int = 200) -> Dict[str, Any]:
+    return backtestNbeats(series, horizon=horizon, randomState=random_state, maxSteps=max_steps)
