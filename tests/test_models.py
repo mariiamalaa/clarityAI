@@ -36,9 +36,9 @@ class TestModelWrappers(unittest.TestCase):
             self.assertEqual(len(out[k]), horizon)
 
     def testEtsForecastFormat(self):
-        from src.models.ets import ets_forecast
+        from src.models.ets import etsForecast
 
-        out = ets_forecast(self.series, horizon=6, seasonal_periods=12)
+        out = etsForecast(self.series, horizon=6, seasonal_periods=12)
         self._assertForecastDict(out, horizon=6, modelName="ETS")
 
     def testThetaForecastFormatOrSkip(self):
@@ -46,10 +46,10 @@ class TestModelWrappers(unittest.TestCase):
         if statsmodels is None:
             self.skipTest("statsmodels not installed; skipping Theta tests")
 
-        from src.models.theta import theta_forecast, ThetaUnavailable
+        from src.models.theta import thetaForecast, ThetaUnavailable
 
         try:
-            out = theta_forecast(self.series, horizon=6)
+            out = thetaForecast(self.series, horizon=6)
         except ThetaUnavailable:
             self.skipTest("statsmodels too old for ThetaModel; skipping")
             return
@@ -65,7 +65,7 @@ class TestModelWrappers(unittest.TestCase):
         out = xgbForecast(self.series, horizon=6, nLags=12, searchIter=6, randomState=0)
         self._assertForecastDict(out, horizon=6, modelName="XGB")
 
-    def testNbeatsForecastFormatOrSkip(self):
+    def testZ_NbeatsForecastFormatOrSkip(self):
         neuralforecast = _tryImport("neuralforecast")
         if neuralforecast is None:
             self.skipTest("neuralforecast not installed; skipping N-BEATS tests")
@@ -85,7 +85,7 @@ class TestModelWrappers(unittest.TestCase):
             return
         self._assertForecastDict(out, horizon=6, modelName="N-BEATS")
 
-    def testNbeatsRejectsShortSeries(self):
+    def testZ_NbeatsRejectsShortSeries(self):
         from src.models.nbeats import nbeatsForecast
 
         pd = self.pd
@@ -404,7 +404,23 @@ class TestZForecastApiFlow(unittest.TestCase):
             self.assertIn("detectors", anomaly)
             self.assertIn("severity", anomaly)
 
+    def testFlatTrendSeriesDoesNotCrash(self):
+        """Dataset 4: flat/no-trend — forecast should complete and insights should be a list."""
+        rows = ["date,metric"]
+        year, month = 2022, 1
+        for _ in range(30):
+            rows.append(f"{year:04d}-{month:02d}-01,200.0")
+            month += 1
+            if month == 13:
+                month = 1
+                year += 1
+
+        body = self._runFlow("\n".join(rows), horizon=3, expectDone=True, models=["ETS", "THETA"])
+        self.assertEqual(body["status"], "done", body)
+        result = body["result"]
+        self.assertIn("forecasts", result)
+        self.assertIsInstance(result.get("insights", []), list)
+
 
 if __name__ == "__main__":
     unittest.main()
-
