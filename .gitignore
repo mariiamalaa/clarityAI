@@ -19,6 +19,7 @@ env/
 uploads/
 artifacts/models/
 artifacts/plots/
+artifacts/reports/
 
 # Node / Frontend
 frontend/node_modules/
